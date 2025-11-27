@@ -27,6 +27,13 @@ class User
 
     public function getSubject(): ?string
     {
-        return $this->claims['sub'] ?? null;
+        $sub = $this->claims['sub'] ?? null;
+
+        if ($sub === null) {
+            return null;
+        }
+
+        // Cast to string to satisfy return type hint (in case JSON decoded 'sub' as int)
+        return (string) $sub;
     }
 }
