@@ -1,0 +1,169 @@
+# AgeWallet PHP SDK
+
+The official, zero-dependency PHP SDK for integrating AgeWallet Age Verification into any PHP application.
+
+Designed for versatility, it supports everything from modern frameworks (Laravel, Symfony) to legacy custom PHP sites.
+
+## Features
+
+- **Zero Dependencies:** No Guzzle, no complex vendor libraries. Runs on native PHP extensions.
+
+- **Secure by Default:** Handles PKCE (S256), State, and Nonce generation automatically.
+
+- **Flexible Gating:** Provides 4 different ways to gate content (Conditionals, Closures, Full-Page Guards, and Output Buffering).
+
+- **Framework Agnostic:** Configurable Session and Security interfaces allow easy integration with Redis, Databases, or custom frameworks.
+
+## Requirements
+
+- PHP 7.4 or higher
+
+- `ext-json`
+
+- `ext-curl`
+
+## Installation
+
+### Option 1: Composer (Recommended)
+
+Run the following command in your project root:
+
+    composer require agewallet/php-sdk
+
+### Option 2: Manual Installation (No Composer)
+
+1. Download the latest release `.zip` and extract it to your project (e.g., into a folder named `agewallet-sdk`).
+
+2. Include the `autoload.php` file at the top of your script:
+
+    `require_once __DIR__ . '/agewallet-sdk/autoload.php';`
+
+## Configuration
+
+Initialize the Client once in your application's bootstrap file (e.g., `init.php` or `config.php`).
+
+    use AgeWallet\Sdk\Client;
+
+    $config = [
+        'client_id'     => 'YOUR_AGEWALLET_CLIENT_ID',
+        'client_secret' => 'YOUR_AGEWALLET_CLIENT_SECRET',
+        'redirect_uri'  => 'https://yoursite.com/auth/callback', // Must match AgeWallet Dashboard
+        'hmac_secret'   => 'YOUR_RANDOM_LONG_STRING', // Used to sign the verification cookie
+    ];
+
+    // Initialize the SDK
+    $ageWallet = new Client($config);
+
+### Important: The Callback Handler
+
+You must create a file at your `redirect_uri` (e.g., `auth/callback.php`) to handle the return from AgeWallet:
+
+    // auth/callback.php
+    require 'init.php'; // Your bootstrap file containing the $ageWallet instance
+
+    try {
+        // Exchanges the code, verifies the token, and sets the session/cookie
+        $user = $ageWallet->authenticate();
+
+        // Redirect back to where the user came from
+        header('Location: ' . $ageWallet->getReturnUrl());
+        exit;
+    } catch (Exception $e) {
+        die("Verification Failed: " . $e->getMessage());
+    }
+
+## Usage: The 4 Ways to Gate Content
+
+Choose the method that best fits your coding style and file structure.
+
+### Option A: Conditional Logic (Granular Control)
+
+Best for: Customizing the UI based on verification status (e.g., hiding a specific button).
+
+    if ($ageWallet->isVerified()) {
+        echo '<button class="btn-buy">Add to Cart (18+)</button>';
+    } else {
+        echo '<button class="btn-disabled" disabled>Verify Age to Purchase</button>';
+    }
+
+### Option B: The Content Wrapper (Modern/Clean)
+
+Best for: Protecting specific blocks of content without leaking variables. Automatically renders the AgeWallet Gate UI if unverified.
+
+    // The content inside the function only runs if the user is verified.
+    echo $ageWallet->protect(function() {
+        return '<video src="secure-movie.mp4" controls></video>';
+    });
+
+### Option C: The Guard (Full Page Protection)
+
+Best for: Protecting entire files (e.g., `download.php` or `adult-gallery.php`). **Note:** If the user is unverified, this method redirects them immediately and stops script execution.
+
+    <?php
+    require 'init.php';
+
+    // Stop right here if not verified
+    $ageWallet->guard();
+
+    // --- SAFE ZONE ---
+    // Anything below this line is only accessible to 18+ users.
+    readfile('/secure/files/report.pdf');
+
+### Option D: Output Buffering (Legacy/Template Friendly)
+
+Best for: Wrapping large chunks of HTML in older PHP files where closures are annoying to write.
+
+    <?php $ageWallet->bufferStart(); ?>
+
+    <!-- Massive block of HTML -->
+    <div class="hero">
+        <h1>Welcome to the VIP Lounge</h1>
+        <img src="adult-banner.jpg">
+        <!-- ... more html ... -->
+    </div>
+
+    <?php $ageWallet->bufferEnd(); ?>
+
+## Advanced Usage
+
+### Custom Session Storage
+
+If your application uses Redis, Memcached, or a Database for sessions (instead of PHP's default `$_SESSION`), you can override the session handler.
+
+1. Create a class that implements `AgeWallet\Sdk\Interfaces\SessionHandlerInterface`.
+
+2. Pass it to the constructor.
+
+    class MyRedisSession implements \AgeWallet\Sdk\Interfaces\SessionHandlerInterface {
+        // Implement set(), get(), has(), remove() using your Redis logic
+    }
+
+    $ageWallet = new Client($config, new MyRedisSession());
+
+### Headless / API Mode (LocalStorage)
+
+By default, the SDK uses Cookies because they are secure and work immediately on page load. If you are building a **Single Page App (SPA)** and want to store tokens in **LocalStorage**, the browser must send the token to your PHP API in a header.
+
+To support this, create a custom Session Handler that reads from HTTP Headers:
+
+    class HeaderSessionHandler implements \AgeWallet\Sdk\Interfaces\SessionHandlerInterface {
+        public function get(string $key, $default = null) {
+            // If checking verification status, look for the Bearer token
+            if ($key === 'aw_verified') {
+                $headers = getallheaders();
+                $token = $headers['Authorization'] ?? '';
+                // Validate $token logic here...
+                return $isValid;
+            }
+            return $default;
+        }
+        // ...
+    }
+
+## Testing
+
+To verify the SDK works on your server environment without a browser, run the integration test script from your terminal:
+
+    php tests/test-integration.php
+
+If you see **"ALL TESTS PASSED SUCCESSFULLY"**, your environment handles the crypto and session logic correctly.

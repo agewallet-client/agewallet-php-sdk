@@ -1,0 +1,21 @@
+# PHP / Composer
+/vendor/
+/.idea/
+/.vscode/
+/.DS_Store
+/.env
+/.env.local
+/.phpunit.result.cache
+/vendor/
+/composer.phar
+
+# Node
+/node_modules/
+
+# Build / logs
+/build/
+/logs/
+*.log
+
+# OS
+Thumbs.db

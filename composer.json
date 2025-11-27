@@ -1,0 +1,16 @@
+{
+    "name": "agewallet/php-sdk",
+    "description": "Official PHP SDK for AgeWallet Age Verification",
+    "type": "library",
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "AgeWallet\\Sdk\\": "src/"
+        }
+    },
+    "require": {
+        "php": ">=7.4",
+        "ext-json": "*",
+        "ext-curl": "*"
+    }
+}
