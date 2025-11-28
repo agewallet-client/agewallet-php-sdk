@@ -7,19 +7,15 @@ Designed for versatility, it supports everything from modern frameworks (Laravel
 ## Features
 
 - **Zero Dependencies:** No Guzzle, no complex vendor libraries. Runs on native PHP extensions.
-
 - **Secure by Default:** Handles PKCE (S256), State, and Nonce generation automatically.
-
 - **Flexible Gating:** Provides 4 different ways to gate content (Conditionals, Closures, Full-Page Guards, and Output Buffering).
-
+- **Customizable UI:** Includes a Standard Gate Renderer with light customization options (Logo/Text) and supports full UI replacement via Interfaces.
 - **Framework Agnostic:** Configurable Session and Security interfaces allow easy integration with Redis, Databases, or custom frameworks.
 
 ## Requirements
 
 - PHP 7.4 or higher
-
 - `ext-json`
-
 - `ext-curl`
 
 ## Installation
@@ -33,7 +29,6 @@ Run the following command in your project root:
 ### Option 2: Manual Installation (No Composer)
 
 1. Download the latest release `.zip` and extract it to your project (e.g., into a folder named `agewallet-sdk`).
-
 2. Include the `autoload.php` file at the top of your script:
 
     `require_once __DIR__ . '/agewallet-sdk/autoload.php';`
@@ -83,12 +78,14 @@ Best for: Customizing the UI based on verification status (e.g., hiding a specif
     if ($ageWallet->isVerified()) {
         echo '<button class="btn-buy">Add to Cart (18+)</button>';
     } else {
-        echo '<button class="btn-disabled" disabled>Verify Age to Purchase</button>';
+        // Manually render the gate inline
+        $authData = $ageWallet->beginFlow();
+        echo $ageWallet->renderer()->render($authData['url']);
     }
 
 ### Option B: The Content Wrapper (Modern/Clean)
 
-Best for: Protecting specific blocks of content without leaking variables. Automatically renders the AgeWallet Gate UI if unverified.
+Best for: Protecting specific blocks of code/content without leaking variables. Automatically renders the AgeWallet Gate UI if unverified.
 
     // The content inside the function only runs if the user is verified.
     echo $ageWallet->protect(function() {
@@ -97,7 +94,7 @@ Best for: Protecting specific blocks of content without leaking variables. Autom
 
 ### Option C: The Guard (Full Page Protection)
 
-Best for: Protecting entire files (e.g., `download.php` or `adult-gallery.php`). **Note:** If the user is unverified, this method redirects them immediately and stops script execution.
+Best for: Protecting entire files (e.g., `download.php` or `adult-gallery.php`). **Note:** If the user is unverified, this method stops script execution immediately and renders the full-page gate.
 
     <?php
     require 'init.php';
@@ -115,14 +112,42 @@ Best for: Wrapping large chunks of HTML in older PHP files where closures are an
 
     <?php $ageWallet->bufferStart(); ?>
 
-    <!-- Massive block of HTML -->
     <div class="hero">
         <h1>Welcome to the VIP Lounge</h1>
         <img src="adult-banner.jpg">
-        <!-- ... more html ... -->
-    </div>
+        </div>
 
     <?php $ageWallet->bufferEnd(); ?>
+
+## Customizing the Gate UI
+
+### Level 1: Light Customization (Configuration)
+
+You can customize the text and logo of the Standard Renderer by passing an options array to the `render()` method. Note: This works best with manual rendering (Option A) or by extending the renderer.
+
+    echo $ageWallet->renderer()->render($authUrl, [
+        'title'       => 'Restricted Area',
+        'message'     => 'Please verify your age to continue.',
+        'button_text' => 'Verify Now',
+        'logo_src'    => 'https://mysite.com/logo.png', // URL or Base64 Data URI
+        'logo_width'  => 150
+    ]);
+
+### Level 2: Full Customization (Custom Renderer)
+
+For complete control over HTML and CSS (e.g., to use Bootstrap, Tailwind, or multi-language support), create your own Renderer class.
+
+1. Create a class that implements `AgeWallet\Sdk\Interfaces\GateRendererInterface`.
+2. Inject it into the Client constructor (4th argument).
+
+    class MyCustomGate implements \AgeWallet\Sdk\Interfaces\GateRendererInterface {
+        public function render(string $authUrl, array $options = []): string {
+             return `<div class="my-gate"><a href="'.$authUrl.'">Verify Me</a></div>`;
+        }
+    }
+
+    // Inject into Client
+    $ageWallet = new Client($config, null, null, new MyCustomGate());
 
 ## Advanced Usage
 
@@ -131,8 +156,7 @@ Best for: Wrapping large chunks of HTML in older PHP files where closures are an
 If your application uses Redis, Memcached, or a Database for sessions (instead of PHP's default `$_SESSION`), you can override the session handler.
 
 1. Create a class that implements `AgeWallet\Sdk\Interfaces\SessionHandlerInterface`.
-
-2. Pass it to the constructor.
+2. Pass it to the constructor (2nd argument).
 
     class MyRedisSession implements \AgeWallet\Sdk\Interfaces\SessionHandlerInterface {
         // Implement set(), get(), has(), remove() using your Redis logic
@@ -166,4 +190,4 @@ To verify the SDK works on your server environment without a browser, run the in
 
     php tests/test-integration.php
 
-If you see **"ALL TESTS PASSED SUCCESSFULLY"**, your environment handles the crypto and session logic correctly.
+If you see **"ALL TESTS PASSED SUCCESSFULLY"**, your environment handles the crypto, session, and rendering logic correctly.
