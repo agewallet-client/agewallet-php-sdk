@@ -8,6 +8,8 @@ require_once __DIR__ . '/Mocks/MockSecurityGenerator.php';
 use AgeWallet\Sdk\Client;
 use AgeWallet\Sdk\Tests\Mocks\InMemorySessionHandler;
 use AgeWallet\Sdk\Tests\Mocks\MockSecurityGenerator;
+use AgeWallet\Sdk\Interfaces\GateRendererInterface;
+use AgeWallet\Sdk\Renderers\StandardGateRenderer;
 
 // 2. Setup Mocks & Config
 $sessionMock = new InMemorySessionHandler();
@@ -48,7 +50,6 @@ try {
         die("FAIL: State does not match mock generator.\n");
     }
     echo "OK\n";
-    echo "    -> Generated URL: " . substr($authData['url'], 0, 50) . "...\n";
 
     // 6. Test: Verify Session Storage
     echo "[4] Verifying Session Storage... ";
@@ -72,6 +73,40 @@ try {
         die("FAIL: Client did not read verified state from session.\n");
     }
     echo "OK\n";
+
+    // --- NEW TESTS FOR RENDERER ---
+
+    // 8. Test: Default Renderer
+    echo "[6] Testing Default Renderer... ";
+    $renderer = $client->renderer();
+    if (!($renderer instanceof StandardGateRenderer)) {
+        die("FAIL: Client did not initialize default StandardGateRenderer.\n");
+    }
+
+    $html = $renderer->render('http://test-auth-url');
+    if (strpos($html, 'aw-gate__card') === false) {
+        die("FAIL: Renderer output does not contain expected CSS class 'aw-gate__card'.\n");
+    }
+    echo "OK\n";
+
+    // 9. Test: Custom Renderer Injection
+    echo "[7] Testing Custom Renderer Injection... ";
+
+    // Inline Mock Class for Testing
+    $mockRenderer = new class implements GateRendererInterface {
+        public function render(string $authUrl, array $options = []): string {
+            return "MOCK_GATE_OUTPUT";
+        }
+    };
+
+    $customClient = new Client($config, $sessionMock, $securityMock, $mockRenderer);
+    $output = $customClient->renderer()->render('http://test');
+
+    if ($output !== "MOCK_GATE_OUTPUT") {
+        die("FAIL: Client did not use injected Custom Renderer.\n");
+    }
+    echo "OK\n";
+
 
     echo "\n--------------------------------------------------\n";
     echo "ALL TESTS PASSED SUCCESSFULLY ✅\n";
