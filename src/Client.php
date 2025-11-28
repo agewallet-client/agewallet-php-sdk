@@ -6,9 +6,10 @@ namespace AgeWallet\Sdk;
 
 use AgeWallet\Sdk\Interfaces\SessionHandlerInterface;
 use AgeWallet\Sdk\Interfaces\SecurityGeneratorInterface;
+use AgeWallet\Sdk\Interfaces\GateRendererInterface;
 use AgeWallet\Sdk\Storage\NativeSessionHandler;
 use AgeWallet\Sdk\Security\StandardSecurityGenerator;
-use AgeWallet\Sdk\Helpers\UI;
+use AgeWallet\Sdk\Renderers\StandardGateRenderer;
 use AgeWallet\Sdk\Exceptions\AgeWalletException;
 
 class Client
@@ -20,35 +21,30 @@ class Client
     private array $config;
     private SessionHandlerInterface $session;
     private SecurityGeneratorInterface $security;
-    private UI $ui;
+    private GateRendererInterface $renderer;
 
     public function __construct(
         array $config,
         ?SessionHandlerInterface $session = null,
-        ?SecurityGeneratorInterface $security = null
+        ?SecurityGeneratorInterface $security = null,
+        ?GateRendererInterface $renderer = null
     ) {
         $this->validateConfig($config);
         $this->config   = $config;
         $this->session  = $session ?? new NativeSessionHandler();
         $this->security = $security ?? new StandardSecurityGenerator();
-        $this->ui       = new UI();
+        $this->renderer = $renderer ?? new StandardGateRenderer();
     }
 
-    /**
-     * Returns the User object representing current state.
-     */
     public function getUser(): User
     {
-        // 1. Check Session
         if ($this->session->get('aw_verified') === true) {
             return new User(true, $this->session->get('aw_claims', []));
         }
 
-        // 2. Check Signed Cookie (Fallback)
         if (!empty($_COOKIE['aw_verified_token'])) {
             $payload = $this->verifySignedCookie($_COOKIE['aw_verified_token']);
             if ($payload) {
-                // Restore session from cookie
                 $this->session->set('aw_verified', true);
                 return new User(true, $payload);
             }
@@ -57,30 +53,20 @@ class Client
         return new User(false);
     }
 
-    /**
-     * Access the UI helper.
-     */
-    public function ui(): UI
+    public function renderer(): GateRendererInterface
     {
-        return $this->ui;
+        return $this->renderer;
     }
 
     // ------------------------------------------------------------------------
-    // THE 4 GATING OPTIONS
+    // GATING METHODS
     // ------------------------------------------------------------------------
 
-    /**
-     * Option A: Boolean check for custom logic.
-     */
     public function isVerified(): bool
     {
         return $this->getUser()->isVerified();
     }
 
-    /**
-     * Option B: Closure Wrapper.
-     * Returns protected content if verified, otherwise returns Gate UI.
-     */
     public function protect(callable $protectedContent, ?callable $gateContent = null): string
     {
         if ($this->isVerified()) {
@@ -91,14 +77,14 @@ class Client
             return (string) $gateContent();
         }
 
-        // Default Gate UI
         $authData = $this->beginFlow();
-        return $this->ui->renderGate($authData['url']);
+        return $this->renderer->render($authData['url']);
     }
 
     /**
      * Option C: The Guard.
-     * Stops execution and redirects if unverified.
+     * Renders the gate and stops execution if unverified.
+     * Prevents any content below this call from loading.
      */
     public function guard(?string $returnUrl = null): void
     {
@@ -106,23 +92,22 @@ class Client
             return;
         }
 
-        // Redirect to AgeWallet
+        // Generate Auth URL
         $authData = $this->beginFlow($returnUrl);
-        header('Location: ' . $authData['url']);
+
+        // Render the Gate UI with the 'is_guard' flag
+        // This tells the renderer to take over the full page styling (black background)
+        echo $this->renderer->render($authData['url'], ['is_guard' => true]);
+
+        // Stop execution immediately (Hard Gating)
         exit;
     }
 
-    /**
-     * Option D: Output Buffer Start.
-     */
     public function bufferStart(): void
     {
         ob_start();
     }
 
-    /**
-     * Option D: Output Buffer End.
-     */
     public function bufferEnd(): void
     {
         $content = ob_get_clean();
@@ -131,7 +116,7 @@ class Client
             echo $content;
         } else {
             $authData = $this->beginFlow();
-            echo $this->ui->renderGate($authData['url']);
+            echo $this->renderer->render($authData['url']);
         }
     }
 
@@ -139,10 +124,6 @@ class Client
     // OIDC FLOW LOGIC
     // ------------------------------------------------------------------------
 
-    /**
-     * Initializes the OIDC flow. Generates PKCE/State and returns URL.
-     * * @return array ['url' => string, 'state' => string]
-     */
     public function beginFlow(?string $returnUrl = null): array
     {
         $state = $this->security->generateRandomString(16);
@@ -150,7 +131,6 @@ class Client
         $verifier = $this->security->generatePkceVerifier();
         $challenge = $this->security->generatePkceChallenge($verifier);
 
-        // Save state to session for verification later
         $this->session->set('aw_oidc_state', [
             'state' => $state,
             'nonce' => $nonce,
@@ -174,27 +154,19 @@ class Client
         return ['url' => $url, 'state' => $state];
     }
 
-    /**
-     * Handles the callback from AgeWallet.
-     * Exchanges code for token and sets verification state.
-     */
     public function authenticate(): User
     {
-        // 1. Retrieve Stored State
         $storedData = $this->session->get('aw_oidc_state');
         if (!$storedData) {
             throw new AgeWalletException('No verification session found. Please try again.');
         }
 
-        // 2. Validate State
         $inputState = $_GET['state'] ?? '';
         if (!hash_equals($storedData['state'], $inputState)) {
             throw new AgeWalletException('Invalid state parameter.');
         }
 
-        // 3. Check for Errors
         if (isset($_GET['error'])) {
-            // Handle "Region does not require verification" exemption
             if ($_GET['error'] === 'access_denied' &&
                 ($_GET['error_description'] ?? '') === 'Region does not require verification') {
                 $this->setVerifiedState([]);
@@ -208,28 +180,19 @@ class Client
             throw new AgeWalletException('Missing authorization code.');
         }
 
-        // 4. Token Exchange
         $tokens = $this->exchangeCode($code, $storedData['verifier']);
-
-        // 5. User Info & Verification
         $userInfo = $this->fetchUserInfo($tokens['access_token']);
 
         if (($userInfo['age_verified'] ?? false) !== true) {
             throw new AgeWalletException('Age verification requirements were not met.');
         }
 
-        // 6. Success
         $this->setVerifiedState($userInfo);
-
-        // Clean up
         $this->session->remove('aw_oidc_state');
 
         return $this->getUser();
     }
 
-    /**
-     * Returns the URL the user was trying to visit before verification started.
-     */
     public function getReturnUrl(): string
     {
         $data = $this->session->get('aw_oidc_state');
@@ -290,11 +253,9 @@ class Client
 
     private function setVerifiedState(array $claims): void
     {
-        // Set Session
         $this->session->set('aw_verified', true);
         $this->session->set('aw_claims', $claims);
 
-        // Set Signed Cookie (if configured)
         if (!empty($this->config['hmac_secret'])) {
             $payload = json_encode(['exp' => time() + 86400, 'sub' => $claims['sub'] ?? 'anon']);
             $sig = hash_hmac('sha256', base64_encode($payload), $this->config['hmac_secret']);
@@ -323,16 +284,12 @@ class Client
 
    private function getCurrentUrl(): string
     {
-        // Handle CLI (Command Line) environment
         if (php_sapi_name() === 'cli') {
             return 'http://localhost/cli-context';
         }
-
-        // Handle Web Environment with fallbacks
         $protocol = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? "https" : "http";
         $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
         $uri = $_SERVER['REQUEST_URI'] ?? '/';
-
         return "{$protocol}://{$host}{$uri}";
     }
 
