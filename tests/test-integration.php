@@ -74,8 +74,6 @@ try {
     }
     echo "OK\n";
 
-    // --- NEW TESTS FOR RENDERER ---
-
     // 8. Test: Default Renderer
     echo "[6] Testing Default Renderer... ";
     $renderer = $client->renderer();

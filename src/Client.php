@@ -82,7 +82,7 @@ class Client
     }
 
     /**
-     * Option C: The Guard.
+     * The Guard.
      * Renders the gate and stops execution if unverified.
      * Prevents any content below this call from loading.
      */
