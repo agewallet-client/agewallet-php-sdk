@@ -8,9 +8,17 @@
             "AgeWallet\\Sdk\\": "src/"
         }
     },
+    "autoload-dev": {
+        "psr-4": {
+            "AgeWallet\\Sdk\\Tests\\": "tests/"
+        }
+    },
     "require": {
         "php": ">=7.4",
         "ext-json": "*",
         "ext-curl": "*"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^9.5"
     }
 }

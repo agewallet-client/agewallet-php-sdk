@@ -186,8 +186,24 @@ To support this, create a custom Session Handler that reads from HTTP Headers:
 
 ## Testing
 
-To verify the SDK works on your server environment without a browser, run the integration test script from your terminal:
+This SDK includes a comprehensive PHPUnit test suite. To run the tests:
 
-    php tests/test-integration.php
+1. Install development dependencies:
 
-If you see **"ALL TESTS PASSED SUCCESSFULLY"**, your environment handles the crypto, session, and rendering logic correctly.
+   composer install
+
+2. Run the test runner:
+    ./vendor/bin/phpunit
+
+## Demos & Examples
+
+This repository includes a complete demo suite in the `examples/` directory, covering all integration methods (Conditional, Protect, Guard, Buffering).
+
+To run the demos locally:
+
+1. Open `examples/init.php` and add your AgeWallet API credentials.
+2. Start the built-in PHP server:
+
+   php -S localhost:8000 -t examples/
+
+3. Visit http://localhost:8000 in your browser.

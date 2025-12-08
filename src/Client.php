@@ -81,25 +81,19 @@ class Client
         return $this->renderer->render($authData['url']);
     }
 
-    /**
-     * The Guard.
-     * Renders the gate and stops execution if unverified.
-     * Prevents any content below this call from loading.
-     */
     public function guard(?string $returnUrl = null): void
     {
         if ($this->isVerified()) {
             return;
         }
 
-        // Generate Auth URL
         $authData = $this->beginFlow($returnUrl);
-
-        // Render the Gate UI with the 'is_guard' flag
-        // This tells the renderer to take over the full page styling (black background)
         echo $this->renderer->render($authData['url'], ['is_guard' => true]);
+        $this->terminate();
+    }
 
-        // Stop execution immediately (Hard Gating)
+    protected function terminate(): void
+    {
         exit;
     }
 
@@ -205,7 +199,6 @@ class Client
 
     private function exchangeCode(string $code, string $verifier): array
     {
-        $ch = curl_init(self::TOKEN_ENDPOINT);
         $postData = [
             'grant_type' => 'authorization_code',
             'client_id' => $this->config['client_id'],
@@ -215,40 +208,45 @@ class Client
             'code_verifier' => $verifier
         ];
 
-        curl_setopt_array($ch, [
+        // Use the HTTP Seam
+        $result = $this->sendRequest(self::TOKEN_ENDPOINT, [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_POST => true,
             CURLOPT_POSTFIELDS => http_build_query($postData)
         ]);
 
-        $response = curl_exec($ch);
-        $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-
-        if ($status !== 200) {
-            throw new AgeWalletException('Token exchange failed. HTTP ' . $status);
+        if ($result['status'] !== 200) {
+            throw new AgeWalletException('Token exchange failed. HTTP ' . $result['status']);
         }
 
-        return json_decode($response, true);
+        return json_decode($result['body'], true);
     }
 
     private function fetchUserInfo(string $accessToken): array
     {
-        $ch = curl_init(self::USERINFO_ENDPOINT);
-        curl_setopt_array($ch, [
+        // Use the HTTP Seam
+        $result = $this->sendRequest(self::USERINFO_ENDPOINT, [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $accessToken]
         ]);
 
+        if ($result['status'] !== 200) {
+            throw new AgeWalletException('User info fetch failed. HTTP ' . $result['status']);
+        }
+
+        return json_decode($result['body'], true);
+    }
+
+    // NEW PROTECTED SEAM for HTTP Requests
+    protected function sendRequest(string $url, array $options): array
+    {
+        $ch = curl_init($url);
+        curl_setopt_array($ch, $options);
         $response = curl_exec($ch);
         $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
 
-        if ($status !== 200) {
-            throw new AgeWalletException('User info fetch failed. HTTP ' . $status);
-        }
-
-        return json_decode($response, true);
+        return ['status' => $status, 'body' => $response];
     }
 
     private function setVerifiedState(array $claims): void
@@ -260,8 +258,16 @@ class Client
             $payload = json_encode(['exp' => time() + 86400, 'sub' => $claims['sub'] ?? 'anon']);
             $sig = hash_hmac('sha256', base64_encode($payload), $this->config['hmac_secret']);
             $cookieVal = base64_encode($payload) . '.' . $sig;
-            setcookie('aw_verified_token', $cookieVal, time() + 86400, '/', '', true, true);
+
+            // Use Cookie Seam
+            $this->setCookie('aw_verified_token', $cookieVal, time() + 86400, '/', '', true, true);
         }
+    }
+
+    // Protected Seam for Cookies
+    protected function setCookie(string $name, string $value, int $expires, string $path, string $domain, bool $secure, bool $httponly): bool
+    {
+        return setcookie($name, $value, $expires, $path, $domain, $secure, $httponly);
     }
 
     private function verifySignedCookie(string $value): ?array
