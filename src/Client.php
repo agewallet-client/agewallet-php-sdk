@@ -18,6 +18,8 @@ class Client
     const TOKEN_ENDPOINT    = 'https://app.agewallet.io/user/token';
     const USERINFO_ENDPOINT = 'https://app.agewallet.io/user/userinfo';
 
+    const METADATA_MAX_BYTES = 4096;
+
     private array $config;
     private SessionHandlerInterface $session;
     private SecurityGeneratorInterface $security;
@@ -118,7 +120,7 @@ class Client
     // OIDC FLOW LOGIC
     // ------------------------------------------------------------------------
 
-    public function beginFlow(?string $returnUrl = null): array
+    public function beginFlow(?string $returnUrl = null, array $options = []): array
     {
         $state = $this->security->generateRandomString(16);
         $nonce = $this->security->generateRandomString(16);
@@ -143,9 +145,42 @@ class Client
             'nonce' => $nonce
         ];
 
+        // Resolve metadata: per-call override wins over instance default.
+        $metadata = $options['metadata'] ?? $this->config['metadata'] ?? null;
+        if ($metadata !== null) {
+            $this->validateMetadata($metadata);
+            $params['metadata'] = $metadata;
+        }
+
         $url = self::AUTH_ENDPOINT . '?' . http_build_query($params);
 
         return ['url' => $url, 'state' => $state];
+    }
+
+    /**
+     * Set the default metadata attached to subsequent verifications.
+     * Pass null to clear. Validates length / type; throws AgeWalletException on bad input.
+     */
+    public function setMetadata(?string $value): self
+    {
+        if ($value !== null) {
+            $this->validateMetadata($value);
+        }
+        $this->config['metadata'] = $value;
+        return $this;
+    }
+
+    /**
+     * Return the metadata that round-tripped with the current verification, or null.
+     * Reads from the persisted /userinfo response stored as `aw_claims`.
+     */
+    public function getMetadata(): ?string
+    {
+        $claims = $this->session->get('aw_claims', []);
+        if (!is_array($claims) || !isset($claims['metadata']) || !is_string($claims['metadata'])) {
+            return null;
+        }
+        return $claims['metadata'];
     }
 
     public function authenticate(): User
@@ -306,6 +341,20 @@ class Client
             if (empty($config[$key])) {
                 throw new AgeWalletException("Missing configuration key: {$key}");
             }
+        }
+
+        if (array_key_exists('metadata', $config) && $config['metadata'] !== null) {
+            $this->validateMetadata($config['metadata']);
+        }
+    }
+
+    private function validateMetadata($value): void
+    {
+        if (!is_string($value)) {
+            throw new AgeWalletException('metadata must be a string.');
+        }
+        if (strlen($value) > self::METADATA_MAX_BYTES) {
+            throw new AgeWalletException('metadata exceeds ' . self::METADATA_MAX_BYTES . '-byte limit.');
         }
     }
 }

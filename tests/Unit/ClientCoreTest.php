@@ -183,4 +183,101 @@ class ClientCoreTest extends TestCase
         $this->assertTrue($user->isVerified());
         $this->assertEquals('user-123', $user->getSubject());
     }
+
+    // ---- Metadata feature ----
+
+    public function testBeginFlowAppendsMetadataFromConfig(): void
+    {
+        $config = $this->config + ['metadata' => 'order-9001'];
+        $client = new Client($config, $this->session, $this->security);
+
+        $result = $client->beginFlow();
+
+        $this->assertStringContainsString('metadata=order-9001', $result['url']);
+    }
+
+    public function testBeginFlowOmitsMetadataWhenUnset(): void
+    {
+        $client = new Client($this->config, $this->session, $this->security);
+
+        $result = $client->beginFlow();
+
+        $this->assertStringNotContainsString('metadata=', $result['url']);
+    }
+
+    public function testBeginFlowPerCallOverrideWins(): void
+    {
+        $config = $this->config + ['metadata' => 'instance-default'];
+        $client = new Client($config, $this->session, $this->security);
+
+        $result = $client->beginFlow(null, ['metadata' => 'per-call-value']);
+
+        $this->assertStringContainsString('metadata=per-call-value', $result['url']);
+        $this->assertStringNotContainsString('instance-default', $result['url']);
+    }
+
+    public function testSetMetadataMutatesDefault(): void
+    {
+        $client = new Client($this->config, $this->session, $this->security);
+        $client->setMetadata('new-value');
+
+        $result = $client->beginFlow();
+
+        $this->assertStringContainsString('metadata=new-value', $result['url']);
+    }
+
+    public function testSetMetadataNullClearsValue(): void
+    {
+        $config = $this->config + ['metadata' => 'will-be-cleared'];
+        $client = new Client($config, $this->session, $this->security);
+        $client->setMetadata(null);
+
+        $result = $client->beginFlow();
+
+        $this->assertStringNotContainsString('metadata=', $result['url']);
+    }
+
+    public function testConstructorRejectsOversizedMetadata(): void
+    {
+        $oversized = str_repeat('a', Client::METADATA_MAX_BYTES + 1);
+        $this->expectException(AgeWalletException::class);
+        $this->expectExceptionMessage('exceeds');
+
+        new Client($this->config + ['metadata' => $oversized], $this->session, $this->security);
+    }
+
+    public function testSetMetadataRejectsOversized(): void
+    {
+        $client = new Client($this->config, $this->session, $this->security);
+        $oversized = str_repeat('a', Client::METADATA_MAX_BYTES + 1);
+
+        $this->expectException(AgeWalletException::class);
+        $client->setMetadata($oversized);
+    }
+
+    public function testBeginFlowRejectsOversizedOverride(): void
+    {
+        $client = new Client($this->config, $this->session, $this->security);
+        $oversized = str_repeat('a', Client::METADATA_MAX_BYTES + 1);
+
+        $this->expectException(AgeWalletException::class);
+        $client->beginFlow(null, ['metadata' => $oversized]);
+    }
+
+    public function testGetMetadataReturnsNullWhenNoVerification(): void
+    {
+        $client = new Client($this->config, $this->session, $this->security);
+
+        $this->assertNull($client->getMetadata());
+    }
+
+    public function testGetMetadataReturnsStringFromClaims(): void
+    {
+        $this->session->set('aw_verified', true);
+        $this->session->set('aw_claims', ['sub' => 'u', 'metadata' => 'persisted-md']);
+
+        $client = new Client($this->config, $this->session, $this->security);
+
+        $this->assertSame('persisted-md', $client->getMetadata());
+    }
 }

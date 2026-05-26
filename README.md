@@ -151,6 +151,32 @@ For complete control over HTML and CSS (e.g., to use Bootstrap, Tailwind, or mul
 
 ## Advanced Usage
 
+### Attaching Metadata to a Verification
+
+You can attach an opaque per-verification string (up to 4096 bytes) that round-trips through the OIDC flow and is stored alongside the verification record on AgeWallet's side. Useful for tying a verification to an order ID, cart hash, internal user ID, or any audit token your application needs.
+
+There are three ways to supply the value, from least to most specific:
+
+    // 1. Instance default via config — used by every beginFlow() call on this client.
+    $ageWallet = new Client([
+        'client_id'     => '...',
+        'client_secret' => '...',
+        'redirect_uri'  => '...',
+        'metadata'      => 'tenant-abc',
+    ]);
+
+    // 2. Mutate the default at runtime — useful when the value isn't known at construct time.
+    $ageWallet->setMetadata('order-' . $order->id);
+
+    // 3. Per-call override — does NOT change the instance default.
+    $authData = $ageWallet->beginFlow($returnUrl, ['metadata' => 'one-off-value']);
+
+After `authenticate()` completes, read the metadata back from the persisted verification:
+
+    $md = $ageWallet->getMetadata(); // string|null
+
+Validation: metadata must be a string ≤ `Client::METADATA_MAX_BYTES` (4096). Invalid values throw `AgeWalletException` immediately.
+
 ### Custom Session Storage
 
 If your application uses Redis, Memcached, or a Database for sessions (instead of PHP's default `$_SESSION`), you can override the session handler.
