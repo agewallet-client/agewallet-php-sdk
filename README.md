@@ -220,16 +220,3 @@ This SDK includes a comprehensive PHPUnit test suite. To run the tests:
 
 2. Run the test runner:
     ./vendor/bin/phpunit
-
-## Demos & Examples
-
-This repository includes a complete demo suite in the `examples/` directory, covering all integration methods (Conditional, Protect, Guard, Buffering).
-
-To run the demos locally:
-
-1. Open `examples/init.php` and add your AgeWallet API credentials.
-2. Start the built-in PHP server:
-
-   php -S localhost:8000 -t examples/
-
-3. Visit http://localhost:8000 in your browser.
